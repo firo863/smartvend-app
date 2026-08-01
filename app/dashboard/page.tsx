@@ -2,34 +2,14 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { useRouter } from "next/navigation";
-import {
-  Sun, Moon, Package, Tag, ShoppingCart, BarChart3, MapPin, AlertTriangle,
-  Plus, RefreshCw, LogOut, CheckCircle2, Circle, X, Pencil, PiggyBank, Percent,
-} from "lucide-react";
-
-const DARK = {
-  bg: "#10141B", surface: "#181E27", raised: "#212934", border: "#2C3542",
-  textHi: "#EDEFF2", textLo: "#8D97A7", amber: "#E8A33D", green: "#4F9D69", red: "#D9534F", blue: "#5B8DEF",
-};
-const LIGHT = {
-  bg: "#F7F8FA", surface: "#FFFFFF", raised: "#F1F3F5", border: "#E4E7EC",
-  textHi: "#111827", textLo: "#6B7280", amber: "#C2801F", green: "#3D8B5C", red: "#C0392B", blue: "#3B6FD6",
-};
-
-type Slot = {
-  id: string; slot_code: string; product_name: string;
-  current_stock: number; max_stock: number; fill_pct: number;
-  wholesale_price: number | null; selling_price: number | null;
-};
-type Machine = { id: string; name: string; location: string; status: string; slots: Slot[] };
-type Deal = {
-  id: string; store_name: string; product_name: string;
-  deal_price: number; regular_price: number | null; valid_until: string; distance_km: number | null;
-};
-
-const fillTone = (pct: number, t: typeof DARK) => (pct < 20 ? t.red : pct < 45 ? t.amber : t.green);
-const machineFill = (m: Machine) =>
-  m.slots.length ? Math.round(m.slots.reduce((a, s) => a + Number(s.fill_pct), 0) / m.slots.length) : 0;
+import { Sun, Moon, Package, Tag, ShoppingCart, BarChart3, RefreshCw, LogOut } from "lucide-react";
+import { DARK, LIGHT, Slot, Machine, Deal, machineFill, friendlyError } from "@/lib/types";
+import Toast, { ToastState } from "@/components/Toast";
+import TodayView from "@/components/TodayView";
+import MachinesView from "@/components/MachinesView";
+import DealsView from "@/components/DealsView";
+import ShoppingView from "@/components/ShoppingView";
+import MarginsView from "@/components/MarginsView";
 
 const NAV_ITEMS = [
   { id: "today", label: "Heute", icon: Sun },
@@ -55,7 +35,16 @@ export default function Dashboard() {
   const [machineForm, setMachineForm] = useState({ name: "", location: "" });
   const [slotFormFor, setSlotFormFor] = useState<string | null>(null);
   const [slotForm, setSlotForm] = useState({ slot_code: "", product_name: "", max_stock: "10", current_stock: "10" });
+  const [dealForm, setDealForm] = useState({ store_name: "", product_name: "", deal_price: "", regular_price: "", valid_until: "", distance_km: "" });
+  const [savingId, setSavingId] = useState<string | null>(null);
+  const [toast, setToast] = useState<ToastState>(null);
   const router = useRouter();
+
+  const showToast = (message: string, type: "success" | "error" = "success") => {
+    setToast({ message, type });
+    window.clearTimeout((showToast as any)._t);
+    (showToast as any)._t = window.setTimeout(() => setToast(null), 2800);
+  };
 
   useEffect(() => {
     const stored = localStorage.getItem("smartvend-theme");
@@ -68,45 +57,69 @@ export default function Dashboard() {
     localStorage.setItem("smartvend-theme", next);
   };
 
+  // Zentrale Fehlerbehandlung: bei abgelaufener Session automatisch zu /login,
+  // sonst sichtbare Fehlermeldung statt stillem Fehlschlag.
+  const handleError = (error: { message?: string; code?: string } | null) => {
+    const msg = friendlyError(error);
+    if (msg.includes("Sitzung abgelaufen")) {
+      showToast(msg, "error");
+      setTimeout(() => router.push("/login"), 1200);
+      return;
+    }
+    showToast(msg, "error");
+  };
+
   const load = async () => {
     setLoading(true);
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) { router.push("/login"); return; }
-    setUserId(user.id);
+    try {
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      if (userError || !user) { router.push("/login"); return; }
+      setUserId(user.id);
 
-    const { data: machinesData } = await supabase
-      .from("machines")
-      .select("id, name, location, status, slots(id, slot_code, product_name, current_stock, max_stock, fill_pct, wholesale_price, selling_price)");
-    if (machinesData) setMachines(machinesData as Machine[]);
+      const [{ data: machinesData, error: mErr }, { data: dealsData, error: dErr }] = await Promise.all([
+        supabase.from("machines").select(
+          "id, name, location, status, slots(id, slot_code, product_name, current_stock, max_stock, fill_pct, wholesale_price, selling_price)"
+        ),
+        supabase.from("deals").select("id, store_name, product_name, deal_price, regular_price, valid_until, distance_km")
+          .gte("valid_until", new Date().toISOString().slice(0, 10))
+          .order("distance_km", { ascending: true, nullsFirst: false }),
+      ]);
 
-    const { data: dealsData } = await supabase
-      .from("deals")
-      .select("id, store_name, product_name, deal_price, regular_price, valid_until, distance_km")
-      .gte("valid_until", new Date().toISOString().slice(0, 10))
-      .order("valid_until", { ascending: true });
-    if (dealsData) setDeals(dealsData as Deal[]);
-
-    setLoading(false);
+      if (mErr) { handleError(mErr); return; }
+      if (dErr) { handleError(dErr); return; }
+      if (machinesData) setMachines(machinesData as Machine[]);
+      if (dealsData) setDeals(dealsData as Deal[]);
+    } catch (e: any) {
+      handleError({ message: e?.message });
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => { load(); }, []);
 
   const addMachine = async () => {
-    if (!userId || !machineForm.name || !machineForm.location) return;
+    if (!userId || !machineForm.name || !machineForm.location) {
+      showToast("Bitte Name und Standort ausfüllen.", "error");
+      return;
+    }
     const { data, error } = await supabase
       .from("machines")
       .insert({ owner_id: userId, name: machineForm.name, location: machineForm.location, status: "active" })
       .select()
       .single();
-    if (!error && data) {
-      setMachines((prev) => [...prev, { ...(data as any), slots: [] }]);
-      setMachineForm({ name: "", location: "" });
-      setShowMachineForm(false);
-    }
+    if (error) return handleError(error);
+    setMachines((prev) => [...prev, { ...(data as any), slots: [] }]);
+    setMachineForm({ name: "", location: "" });
+    setShowMachineForm(false);
+    showToast(`"${machineForm.name}" wurde angelegt.`);
   };
 
   const addSlot = async (machineId: string) => {
-    if (!slotForm.slot_code || !slotForm.product_name) return;
+    if (!slotForm.slot_code || !slotForm.product_name) {
+      showToast("Bitte Slot-Code und Produktname ausfüllen.", "error");
+      return;
+    }
     const maxStock = parseInt(slotForm.max_stock || "10", 10);
     const currentStock = Math.min(parseInt(slotForm.current_stock || "0", 10), maxStock);
     const { data, error } = await supabase
@@ -114,33 +127,43 @@ export default function Dashboard() {
       .insert({ machine_id: machineId, slot_code: slotForm.slot_code, product_name: slotForm.product_name, max_stock: maxStock, current_stock: currentStock })
       .select()
       .single();
-    if (!error && data) {
-      setMachines((prev) => prev.map((m) => m.id !== machineId ? m : { ...m, slots: [...m.slots, data as Slot] }));
-      setSlotForm({ slot_code: "", product_name: "", max_stock: "10", current_stock: "10" });
-      setSlotFormFor(null);
-    }
+    if (error) return handleError(error);
+    setMachines((prev) => prev.map((m) => m.id !== machineId ? m : { ...m, slots: [...m.slots, data as Slot] }));
+    setSlotForm({ slot_code: "", product_name: "", max_stock: "10", current_stock: "10" });
+    setSlotFormFor(null);
+    showToast("Slot angelegt.");
   };
 
   const updateStock = async (slotId: string, newStock: number, maxStock: number) => {
     const clamped = Math.max(0, Math.min(newStock, maxStock));
-    await supabase.from("slots").update({ current_stock: clamped, updated_at: new Date().toISOString() }).eq("id", slotId);
+    setSavingId(slotId);
+    const { error } = await supabase.from("slots").update({ current_stock: clamped, updated_at: new Date().toISOString() }).eq("id", slotId);
+    setSavingId(null);
+    if (error) return handleError(error);
     setMachines((prev) => prev.map((m) => ({
       ...m,
       slots: m.slots.map((s) => s.id !== slotId ? s : { ...s, current_stock: clamped, fill_pct: Math.round((clamped / maxStock) * 100) }),
     })));
+    showToast("Bestand gespeichert.");
   };
 
   const updatePrices = async (slotId: string, wholesale: number | null, selling: number | null) => {
-    await supabase.from("slots").update({ wholesale_price: wholesale, selling_price: selling }).eq("id", slotId);
+    setSavingId(slotId);
+    const { error } = await supabase.from("slots").update({ wholesale_price: wholesale, selling_price: selling }).eq("id", slotId);
+    setSavingId(null);
+    if (error) return handleError(error);
     setMachines((prev) => prev.map((m) => ({
       ...m,
       slots: m.slots.map((s) => s.id !== slotId ? s : { ...s, wholesale_price: wholesale, selling_price: selling }),
     })));
+    showToast("Preise gespeichert.");
   };
 
-  const [dealForm, setDealForm] = useState({ store_name: "", product_name: "", deal_price: "", regular_price: "", valid_until: "", distance_km: "" });
   const addDeal = async () => {
-    if (!userId || !dealForm.store_name || !dealForm.product_name || !dealForm.deal_price || !dealForm.valid_until) return;
+    if (!userId || !dealForm.store_name || !dealForm.product_name || !dealForm.deal_price || !dealForm.valid_until) {
+      showToast("Bitte Produkt, Geschäft, Preis und Gültigkeit ausfüllen.", "error");
+      return;
+    }
     const { data, error } = await supabase.from("deals").insert({
       owner_id: userId,
       store_name: dealForm.store_name,
@@ -150,11 +173,11 @@ export default function Dashboard() {
       valid_until: dealForm.valid_until,
       distance_km: dealForm.distance_km ? parseFloat(dealForm.distance_km) : null,
     }).select().single();
-    if (!error && data) {
-      setDeals((prev) => [...prev, data as Deal].sort((a, b) => (a.distance_km ?? 999) - (b.distance_km ?? 999)));
-      setDealForm({ store_name: "", product_name: "", deal_price: "", regular_price: "", valid_until: "", distance_km: "" });
-      setShowDealForm(false);
-    }
+    if (error) return handleError(error);
+    setDeals((prev) => [...prev, data as Deal].sort((a, b) => (a.distance_km ?? 999) - (b.distance_km ?? 999)));
+    setDealForm({ store_name: "", product_name: "", deal_price: "", regular_price: "", valid_until: "", distance_km: "" });
+    setShowDealForm(false);
+    showToast("Deal gespeichert.");
   };
 
   const logout = async () => { await supabase.auth.signOut(); router.push("/login"); };
@@ -225,270 +248,39 @@ export default function Dashboard() {
         </div>
 
         {activeView === "today" && (
-          <div className="max-w-2xl space-y-4">
-            <div className="mb-2 flex flex-wrap gap-3">
-              <div className="flex-1 min-w-[130px] rounded-lg border p-3.5" style={{ borderColor: T.border, background: T.surface }}>
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: T.textLo }}>Kritisch</span>
-                  <AlertTriangle size={13} style={{ color: T.red }} />
-                </div>
-                <div className="mt-1 font-mono text-xl font-semibold">{criticalMachines.length}</div>
-                <div className="text-[11px]" style={{ color: T.textLo }}>Automaten &lt; 20%</div>
-              </div>
-              <div className="flex-1 min-w-[130px] rounded-lg border p-3.5" style={{ borderColor: T.border, background: T.surface }}>
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: T.textLo }}>Ersparnis</span>
-                  <PiggyBank size={13} style={{ color: T.amber }} />
-                </div>
-                <div className="mt-1 font-mono text-xl font-semibold">{totalSavings.toFixed(2)} €</div>
-                <div className="text-[11px]" style={{ color: T.textLo }}>via Deal-Radar, aktueller Bedarf</div>
-              </div>
-              <div className="flex-1 min-w-[130px] rounded-lg border p-3.5" style={{ borderColor: T.border, background: T.surface }}>
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: T.textLo }}>Ø Marge</span>
-                  <Percent size={13} style={{ color: T.green }} />
-                </div>
-                <div className="mt-1 font-mono text-xl font-semibold">{avgMargin != null ? `${avgMargin}%` : "—"}</div>
-                <div className="text-[11px]" style={{ color: T.textLo }}>{avgMargin != null ? "aus hinterlegten Preisen" : "noch keine Preise"}</div>
-              </div>
-            </div>
-
-            {alertsOpen && criticalMachines.length > 0 && (
-              <div className="flex items-start gap-3 rounded-lg border p-3.5" style={{ borderColor: `${T.red}66`, background: `${T.red}1A` }}>
-                <AlertTriangle size={16} className="mt-0.5 shrink-0" style={{ color: T.red }} />
-                <div className="flex-1 text-sm">
-                  <span className="font-medium">{criticalMachines.length === 1 ? "1 Automat" : `${criticalMachines.length} Automaten`}</span>{" "}
-                  {criticalMachines.length === 1 ? "braucht" : "brauchen"} heute Aufmerksamkeit.
-                </div>
-                <button onClick={() => setAlertsOpen(false)} style={{ color: T.textLo }}><X size={15} /></button>
-              </div>
-            )}
-            {criticalMachines.length === 0 && (
-              <div className="rounded-lg border p-6 text-center text-sm" style={{ borderColor: T.border, background: T.surface, color: T.textLo }}>
-                <CheckCircle2 size={22} className="mx-auto mb-2" style={{ color: T.green }} />
-                Alle Automaten gut gefüllt.
-              </div>
-            )}
-            {criticalMachines.map((m) => (
-              <div key={m.id} className="rounded-lg border p-4" style={{ borderColor: T.border, background: T.surface }}>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h3 className="text-sm font-semibold">{m.name}</h3>
-                    <div className="mt-0.5 flex items-center gap-1 text-xs" style={{ color: T.textLo }}><MapPin size={11} />{m.location}</div>
-                  </div>
-                  <span className="font-mono text-lg font-semibold" style={{ color: fillTone(machineFill(m), T) }}>{machineFill(m)}%</span>
-                </div>
-                <div className="mt-3 space-y-1.5">
-                  {m.slots.filter((s) => s.fill_pct < 45).map((s) => (
-                    <button key={s.id} onClick={() => updateStock(s.id, s.max_stock, s.max_stock)}
-                      className="flex w-full items-center justify-between rounded-md px-3 py-2 text-left text-xs"
-                      style={{ background: T.raised }}>
-                      <span className="flex items-center gap-2">
-                        {s.current_stock === s.max_stock ? <CheckCircle2 size={15} style={{ color: T.green }} /> : <Circle size={15} style={{ color: T.border }} />}
-                        {s.slot_code} · {s.product_name}
-                      </span>
-                      <span className="font-mono" style={{ color: fillTone(s.fill_pct, T) }}>{s.fill_pct}% → Tippen zum Auffüllen</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
+          <TodayView
+            machines={machines} criticalMachines={criticalMachines} totalSavings={totalSavings} avgMargin={avgMargin}
+            alertsOpen={alertsOpen} setAlertsOpen={setAlertsOpen}
+            onRestockSlot={(machineId, slotId, maxStock) => updateStock(slotId, maxStock, maxStock)}
+            savingId={savingId} T={T}
+          />
         )}
 
         {activeView === "machines" && (
-          <div>
-            <div className="mb-3 flex justify-end">
-              <button onClick={() => setShowMachineForm((v) => !v)} className="flex items-center gap-1 rounded-md px-2.5 py-1.5 text-xs" style={{ background: T.raised, color: T.textHi }}>
-                <Plus size={13} /> Automat hinzufügen
-              </button>
-            </div>
-            {showMachineForm && (
-              <div className="mb-4 max-w-md rounded-lg border p-3.5" style={{ borderColor: T.border, background: T.surface }}>
-                <div className="space-y-2">
-                  <input placeholder="Name (z.B. Automat Bahnhof)" value={machineForm.name} onChange={(e) => setMachineForm({ ...machineForm, name: e.target.value })}
-                    className="w-full rounded-md border px-2.5 py-1.5 text-xs" style={{ background: T.bg, borderColor: T.border, color: T.textHi }} />
-                  <input placeholder="Standort (z.B. Immenstadt, Hauptstr. 4)" value={machineForm.location} onChange={(e) => setMachineForm({ ...machineForm, location: e.target.value })}
-                    className="w-full rounded-md border px-2.5 py-1.5 text-xs" style={{ background: T.bg, borderColor: T.border, color: T.textHi }} />
-                </div>
-                <button onClick={addMachine} className="mt-2 rounded-md px-3 py-1.5 text-xs font-medium" style={{ background: T.amber, color: theme === "dark" ? T.bg : "#fff" }}>Speichern</button>
-              </div>
-            )}
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            {machines.map((m) => {
-              const avgFill = machineFill(m);
-              const critical = avgFill < 20;
-              const expanded = expandedMachine === m.id;
-              return (
-                <div key={m.id} className="rounded-lg border p-4" style={{ borderColor: critical ? `${T.red}80` : T.border, background: T.surface }}>
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <h3 className="text-sm font-semibold">{m.name}</h3>
-                      <div className="mt-0.5 flex items-center gap-1 text-xs" style={{ color: T.textLo }}><MapPin size={11} />{m.location}</div>
-                    </div>
-                    <span className="font-mono text-lg font-semibold" style={{ color: m.slots.length ? fillTone(avgFill, T) : T.textLo }}>{m.slots.length ? `${avgFill}%` : "—"}</span>
-                  </div>
-
-                  {m.slots.length > 0 && (
-                    <div className="mt-3 flex h-9 items-end gap-[3px]">
-                      {m.slots.map((s) => (
-                        <div key={s.id} title={`${s.slot_code}: ${s.fill_pct}%`}
-                          style={{ height: `${Math.max(Number(s.fill_pct), 6)}%`, background: fillTone(Number(s.fill_pct), T) }}
-                          className="w-2.5 rounded-t-sm" />
-                      ))}
-                    </div>
-                  )}
-
-                  <div className="mt-3 space-y-1.5 border-t pt-3" style={{ borderColor: T.border }}>
-                    {m.slots.length === 0 && <p className="text-xs" style={{ color: T.textLo }}>Noch keine Slots — leg unten den ersten an.</p>}
-                    {m.slots.map((s) => (
-                      <div key={s.id} className="text-xs">
-                        <div className="flex items-center justify-between">
-                          <span className="flex items-center gap-1.5"><Package size={12} style={{ color: T.textLo }} />{s.slot_code} · {s.product_name}</span>
-                          <span className="flex items-center gap-1.5">
-                            <input type="number" defaultValue={s.current_stock} min={0} max={s.max_stock}
-                              onBlur={(e) => updateStock(s.id, parseInt(e.target.value || "0", 10), s.max_stock)}
-                              style={{ background: T.bg, borderColor: T.border, color: T.textHi }}
-                              className="w-12 rounded border px-1.5 py-0.5 text-right font-mono text-xs" />
-                            <span style={{ color: T.textLo }} className="font-mono">/ {s.max_stock}</span>
-                          </span>
-                        </div>
-                        {expanded && (
-                          <div className="mt-1 flex items-center gap-2 pl-5">
-                            <span style={{ color: T.textLo }}>EK</span>
-                            <input type="number" step="0.01" defaultValue={s.wholesale_price ?? ""}
-                              onBlur={(e) => updatePrices(s.id, e.target.value ? parseFloat(e.target.value) : null, s.selling_price)}
-                              style={{ background: T.bg, borderColor: T.border, color: T.textHi }}
-                              className="w-16 rounded border px-1.5 py-0.5 text-right font-mono text-[11px]" />
-                            <span style={{ color: T.textLo }}>VK</span>
-                            <input type="number" step="0.01" defaultValue={s.selling_price ?? ""}
-                              onBlur={(e) => updatePrices(s.id, s.wholesale_price, e.target.value ? parseFloat(e.target.value) : null)}
-                              style={{ background: T.bg, borderColor: T.border, color: T.textHi }}
-                              className="w-16 rounded border px-1.5 py-0.5 text-right font-mono text-[11px]" />
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-
-                  {slotFormFor === m.id && (
-                    <div className="mt-3 space-y-1.5 rounded-md p-2.5" style={{ background: T.raised }}>
-                      <div className="flex gap-1.5">
-                        <input placeholder="Slot (A1)" value={slotForm.slot_code} onChange={(e) => setSlotForm({ ...slotForm, slot_code: e.target.value })}
-                          className="w-16 rounded border px-1.5 py-1 text-[11px]" style={{ background: T.bg, borderColor: T.border, color: T.textHi }} />
-                        <input placeholder="Produkt" value={slotForm.product_name} onChange={(e) => setSlotForm({ ...slotForm, product_name: e.target.value })}
-                          className="flex-1 rounded border px-1.5 py-1 text-[11px]" style={{ background: T.bg, borderColor: T.border, color: T.textHi }} />
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <input type="number" placeholder="Aktuell" value={slotForm.current_stock} onChange={(e) => setSlotForm({ ...slotForm, current_stock: e.target.value })}
-                          className="w-16 rounded border px-1.5 py-1 text-[11px]" style={{ background: T.bg, borderColor: T.border, color: T.textHi }} />
-                        <span style={{ color: T.textLo }} className="text-[11px]">/</span>
-                        <input type="number" placeholder="Max" value={slotForm.max_stock} onChange={(e) => setSlotForm({ ...slotForm, max_stock: e.target.value })}
-                          className="w-16 rounded border px-1.5 py-1 text-[11px]" style={{ background: T.bg, borderColor: T.border, color: T.textHi }} />
-                        <button onClick={() => addSlot(m.id)} className="ml-auto rounded-md px-2.5 py-1 text-[11px] font-medium" style={{ background: T.amber, color: theme === "dark" ? T.bg : "#fff" }}>Speichern</button>
-                      </div>
-                    </div>
-                  )}
-
-                  <div className="mt-3 flex items-center gap-1">
-                    <button onClick={() => setExpandedMachine(expanded ? null : m.id)}
-                      className="flex items-center gap-1 rounded-md px-2 py-1 text-[11px]" style={{ color: T.textLo }}>
-                      <Pencil size={12} /> {expanded ? "Preise ausblenden" : "Preise bearbeiten"}
-                    </button>
-                    <button onClick={() => setSlotFormFor(slotFormFor === m.id ? null : m.id)}
-                      className="ml-auto flex items-center gap-1 rounded-md px-2 py-1 text-[11px]" style={{ color: T.textLo }}>
-                      <Plus size={12} /> Slot
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-            </div>
-          </div>
+          <MachinesView
+            machines={machines} expandedMachine={expandedMachine} setExpandedMachine={setExpandedMachine}
+            showMachineForm={showMachineForm} setShowMachineForm={setShowMachineForm}
+            machineForm={machineForm} setMachineForm={setMachineForm} onAddMachine={addMachine}
+            slotFormFor={slotFormFor} setSlotFormFor={setSlotFormFor}
+            slotForm={slotForm} setSlotForm={setSlotForm} onAddSlot={addSlot}
+            onUpdateStock={updateStock} onUpdatePrices={updatePrices}
+            savingId={savingId} theme={theme} T={T}
+          />
         )}
 
         {activeView === "deals" && (
-          <div className="max-w-2xl rounded-lg border p-4" style={{ borderColor: T.border, background: T.surface }}>
-            <button onClick={() => setShowDealForm((v) => !v)} className="mb-3 flex items-center gap-1 rounded-md px-2 py-1 text-xs" style={{ color: T.textLo }}>
-              <Plus size={13} /> Deal eintragen
-            </button>
-            {showDealForm && (
-              <div className="mb-3 rounded-lg border p-3.5" style={{ borderColor: T.border, background: T.raised }}>
-                <div className="grid grid-cols-2 gap-2">
-                  <input placeholder="Produkt" value={dealForm.product_name} onChange={(e) => setDealForm({ ...dealForm, product_name: e.target.value })}
-                    className="rounded-md border px-2.5 py-1.5 text-xs" style={{ background: T.bg, borderColor: T.border, color: T.textHi }} />
-                  <input placeholder="Geschäft" value={dealForm.store_name} onChange={(e) => setDealForm({ ...dealForm, store_name: e.target.value })}
-                    className="rounded-md border px-2.5 py-1.5 text-xs" style={{ background: T.bg, borderColor: T.border, color: T.textHi }} />
-                  <input placeholder="Deal-Preis (€)" value={dealForm.deal_price} onChange={(e) => setDealForm({ ...dealForm, deal_price: e.target.value })}
-                    className="rounded-md border px-2.5 py-1.5 text-xs" style={{ background: T.bg, borderColor: T.border, color: T.textHi }} />
-                  <input placeholder="Regulärpreis (€)" value={dealForm.regular_price} onChange={(e) => setDealForm({ ...dealForm, regular_price: e.target.value })}
-                    className="rounded-md border px-2.5 py-1.5 text-xs" style={{ background: T.bg, borderColor: T.border, color: T.textHi }} />
-                  <input type="date" value={dealForm.valid_until} onChange={(e) => setDealForm({ ...dealForm, valid_until: e.target.value })}
-                    className="rounded-md border px-2.5 py-1.5 text-xs" style={{ background: T.bg, borderColor: T.border, color: T.textHi }} />
-                  <input placeholder="Entfernung (km)" value={dealForm.distance_km} onChange={(e) => setDealForm({ ...dealForm, distance_km: e.target.value })}
-                    className="rounded-md border px-2.5 py-1.5 text-xs" style={{ background: T.bg, borderColor: T.border, color: T.textHi }} />
-                </div>
-                <button onClick={addDeal} className="mt-2 rounded-md px-3 py-1.5 text-xs font-medium" style={{ background: T.amber, color: theme === "dark" ? T.bg : "#fff" }}>Speichern</button>
-              </div>
-            )}
-            {deals.length === 0 && <p className="text-xs" style={{ color: T.textLo }}>Noch keine Deals eingetragen.</p>}
-            {deals.map((d) => (
-              <div key={d.id} className="flex items-center justify-between border-b py-3 last:border-0" style={{ borderColor: T.border }}>
-                <div>
-                  <div className="text-sm font-medium">{d.product_name}</div>
-                  <div className="text-xs" style={{ color: T.textLo }}>{d.store_name}{d.distance_km != null ? ` · ${d.distance_km} km` : ""} · bis {d.valid_until}</div>
-                </div>
-                <div className="font-mono text-sm font-semibold">{d.deal_price.toFixed(2)} €</div>
-              </div>
-            ))}
-          </div>
+          <DealsView
+            deals={deals} showDealForm={showDealForm} setShowDealForm={setShowDealForm}
+            dealForm={dealForm} setDealForm={setDealForm} onAddDeal={addDeal} theme={theme} T={T}
+          />
         )}
 
         {activeView === "shopping" && (
-          <div className="max-w-2xl rounded-lg border p-4" style={{ borderColor: T.border, background: T.surface }}>
-            {Object.keys(shoppingGroups).length === 0 && (
-              <p className="text-xs" style={{ color: T.textLo }}>Keine kritischen Slots — nichts einzukaufen.</p>
-            )}
-            {Object.entries(shoppingGroups).map(([store, items]) => (
-              <div key={store} className="mb-4">
-                <div className="mb-1.5 text-xs font-medium">{store}</div>
-                {items.map((it, i) => (
-                  <div key={i} className="flex items-center justify-between pl-3 text-xs" style={{ color: T.textLo }}>
-                    <span>{it.qty}× {it.productName}</span>
-                    <span className="font-mono">{it.price > 0 ? `${(it.price * it.qty).toFixed(2)} €` : "kein Preis"}</span>
-                  </div>
-                ))}
-              </div>
-            ))}
-            {totalSavings > 0 && (
-              <p className="mt-2 text-[11px] font-medium" style={{ color: T.green }}>Geschätzte Ersparnis ggü. Regulärpreis: {totalSavings.toFixed(2)} €</p>
-            )}
-            <p className="mt-1 text-[11px]" style={{ color: T.textLo }}>Automatisch aus kritischen Automaten + Deal-Radar zusammengestellt.</p>
-          </div>
+          <ShoppingView shoppingGroups={shoppingGroups} totalSavings={totalSavings} T={T} />
         )}
 
         {activeView === "margins" && (
-          <div className="rounded-lg border p-4" style={{ borderColor: T.border, background: T.surface }}>
-            {priceableSlots.length === 0 ? (
-              <p className="text-xs" style={{ color: T.textLo }}>
-                Noch keine Preise hinterlegt. Geh zu <b>Automaten</b> → <b>Preise bearbeiten</b>, um EK-/VK-Preise einzutragen — dann erscheint hier die Marge.
-              </p>
-            ) : (
-              <div className="space-y-2">
-                {machineMargins.map((m) => (
-                  <div key={m.name} className="flex items-center gap-3">
-                    <span className="w-32 shrink-0 truncate text-xs">{m.name}</span>
-                    <div className="h-4 flex-1 rounded" style={{ background: T.raised }}>
-                      {m.marginPct != null && (
-                        <div className="h-4 rounded" style={{ width: `${Math.min(m.marginPct, 100)}%`, background: m.marginPct >= 40 ? T.green : T.amber }} />
-                      )}
-                    </div>
-                    <span className="w-14 shrink-0 text-right font-mono text-xs">{m.marginPct != null ? `${m.marginPct}%` : "—"}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+          <MarginsView machineMargins={machineMargins} hasPricedSlots={priceableSlots.length > 0} T={T} />
         )}
       </div>
 
@@ -502,6 +294,8 @@ export default function Dashboard() {
           </button>
         ))}
       </nav>
+
+      <Toast toast={toast} T={T} />
     </div>
   );
 }
