@@ -1,5 +1,5 @@
 "use client";
-import { Plus, MapPin, Package, Pencil } from "lucide-react";
+import { Plus, MapPin, Package, Pencil, Trash2 } from "lucide-react";
 import { Machine, Theme, fillTone, machineFill } from "@/lib/types";
 
 type MachineForm = { name: string; location: string };
@@ -9,7 +9,7 @@ export default function MachinesView({
   machines, expandedMachine, setExpandedMachine,
   showMachineForm, setShowMachineForm, machineForm, setMachineForm, onAddMachine,
   slotFormFor, setSlotFormFor, slotForm, setSlotForm, onAddSlot,
-  onUpdateStock, onUpdatePrices, savingId, theme, T,
+  onUpdateStock, onUpdatePrices, onDeleteMachine, savingId, theme, T,
 }: {
   machines: Machine[];
   expandedMachine: string | null;
@@ -26,6 +26,7 @@ export default function MachinesView({
   onAddSlot: (machineId: string) => void;
   onUpdateStock: (slotId: string, newStock: number, maxStock: number) => void;
   onUpdatePrices: (slotId: string, wholesale: number | null, selling: number | null) => void;
+  onDeleteMachine: (machineId: string, name: string) => void;
   savingId: string | null;
   theme: "dark" | "light";
   T: Theme;
@@ -61,7 +62,12 @@ export default function MachinesView({
                   <h3 className="text-sm font-semibold">{m.name}</h3>
                   <div className="mt-0.5 flex items-center gap-1 text-xs" style={{ color: T.textLo }}><MapPin size={11} />{m.location}</div>
                 </div>
-                <span className="font-mono text-lg font-semibold" style={{ color: m.slots.length ? fillTone(avgFill, T) : T.textLo }}>{m.slots.length ? `${avgFill}%` : "—"}</span>
+                <div className="flex items-center gap-2">
+                  <span className="font-mono text-lg font-semibold" style={{ color: m.slots.length ? fillTone(avgFill, T) : T.textLo }}>{m.slots.length ? `${avgFill}%` : "—"}</span>
+                  <button onClick={() => onDeleteMachine(m.id, m.name)} title="Automat löschen" style={{ color: T.textLo }} className="rounded p-1 hover:text-[#D9534F]">
+                    <Trash2 size={14} />
+                  </button>
+                </div>
               </div>
 
               {m.slots.length > 0 && (

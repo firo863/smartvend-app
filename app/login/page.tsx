@@ -9,6 +9,7 @@ const C = {
 
 export default function Login() {
   const [email, setEmail] = useState("");
+  const [remember, setRemember] = useState(true);
   const [sent, setSent] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -17,6 +18,9 @@ export default function Login() {
     e.preventDefault();
     setLoading(true);
     setError(null);
+
+    localStorage.setItem("smartvend-remember", remember ? "true" : "false");
+
     const { error } = await supabase.auth.signInWithOtp({
       email,
       options: { emailRedirectTo: `${window.location.origin}/dashboard` },
@@ -30,10 +34,7 @@ export default function Login() {
     <div style={{ background: C.bg, minHeight: "100dvh" }} className="flex items-center justify-center p-5 font-sans">
       <div className="w-full max-w-sm">
         <div className="mb-6 flex flex-col items-center text-center">
-          <div
-            className="mb-3 flex h-11 w-11 items-center justify-center rounded-lg font-mono text-sm font-bold"
-            style={{ background: `${C.amber}26`, color: C.amber }}
-          >
+          <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-lg font-mono text-sm font-bold" style={{ background: `${C.amber}26`, color: C.amber }}>
             SV
           </div>
           <div className="text-[11px] font-semibold uppercase tracking-widest" style={{ color: C.amber }}>
@@ -51,11 +52,7 @@ export default function Login() {
               <p style={{ color: C.textLo }} className="text-xs">
                 Check dein E-Mail-Postfach (<span style={{ color: C.textHi }}>{email}</span>) und klick den Login-Link.
               </p>
-              <button
-                onClick={() => setSent(false)}
-                style={{ color: C.textLo }}
-                className="mt-4 text-xs underline"
-              >
+              <button onClick={() => setSent(false)} style={{ color: C.textLo }} className="mt-4 text-xs underline">
                 Andere E-Mail-Adresse verwenden
               </button>
             </div>
@@ -69,10 +66,22 @@ export default function Login() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   required
+                  autoComplete="email"
                   style={{ background: C.bg, borderColor: C.border, color: C.textHi }}
                   className="w-full rounded-md border px-3 py-2.5 text-sm outline-none placeholder:text-[#5B6572] focus:border-[#E8A33D]"
                 />
               </div>
+
+              <label className="flex items-center gap-2 text-xs" style={{ color: C.textLo }}>
+                <input
+                  type="checkbox"
+                  checked={remember}
+                  onChange={(e) => setRemember(e.target.checked)}
+                  style={{ accentColor: C.amber }}
+                />
+                Angemeldet bleiben
+              </label>
+
               <button
                 type="submit"
                 disabled={loading}

@@ -4,12 +4,12 @@ import { supabase } from "@/lib/supabaseClient";
 import { useRouter } from "next/navigation";
 import { Sun, Moon, Package, Tag, ShoppingCart, BarChart3, RefreshCw, LogOut } from "lucide-react";
 import { DARK, LIGHT, Slot, Machine, Deal, machineFill, friendlyError } from "@/lib/types";
-import Toast, { ToastState } from "@/components/Toast";
-import TodayView from "@/components/TodayView";
-import MachinesView from "@/components/MachinesView";
-import DealsView from "@/components/DealsView";
-import ShoppingView from "@/components/ShoppingView";
-import MarginsView from "@/components/MarginsView";
+import Toast, { ToastState } from "@/app/components/Toast";
+import TodayView from "@/app/components/TodayView";
+import MachinesView from "@/app/components/MachinesView";
+import DealsView from "@/app/components/DealsView";
+import ShoppingView from "@/app/components/ShoppingView";
+import MarginsView from "@/app/components/MarginsView";
 
 const NAV_ITEMS = [
   { id: "today", label: "Heute", icon: Sun },
@@ -57,8 +57,6 @@ export default function Dashboard() {
     localStorage.setItem("smartvend-theme", next);
   };
 
-  // Zentrale Fehlerbehandlung: bei abgelaufener Session automatisch zu /login,
-  // sonst sichtbare Fehlermeldung statt stillem Fehlschlag.
   const handleError = (error: { message?: string; code?: string } | null) => {
     const msg = friendlyError(error);
     if (msg.includes("Sitzung abgelaufen")) {
@@ -180,6 +178,22 @@ export default function Dashboard() {
     showToast("Deal gespeichert.");
   };
 
+  const deleteMachine = async (machineId: string, name: string) => {
+    if (!window.confirm(`"${name}" wirklich löschen? Alle Slots dieses Automaten werden mitgelöscht.`)) return;
+    const { error } = await supabase.from("machines").delete().eq("id", machineId);
+    if (error) return handleError(error);
+    setMachines((prev) => prev.filter((m) => m.id !== machineId));
+    showToast(`"${name}" wurde gelöscht.`);
+  };
+
+  const deleteDeal = async (dealId: string, productName: string) => {
+    if (!window.confirm(`Deal "${productName}" wirklich löschen?`)) return;
+    const { error } = await supabase.from("deals").delete().eq("id", dealId);
+    if (error) return handleError(error);
+    setDeals((prev) => prev.filter((d) => d.id !== dealId));
+    showToast("Deal gelöscht.");
+  };
+
   const logout = async () => { await supabase.auth.signOut(); router.push("/login"); };
 
   if (loading) {
@@ -263,7 +277,7 @@ export default function Dashboard() {
             machineForm={machineForm} setMachineForm={setMachineForm} onAddMachine={addMachine}
             slotFormFor={slotFormFor} setSlotFormFor={setSlotFormFor}
             slotForm={slotForm} setSlotForm={setSlotForm} onAddSlot={addSlot}
-            onUpdateStock={updateStock} onUpdatePrices={updatePrices}
+            onUpdateStock={updateStock} onUpdatePrices={updatePrices} onDeleteMachine={deleteMachine}
             savingId={savingId} theme={theme} T={T}
           />
         )}
@@ -271,7 +285,7 @@ export default function Dashboard() {
         {activeView === "deals" && (
           <DealsView
             deals={deals} showDealForm={showDealForm} setShowDealForm={setShowDealForm}
-            dealForm={dealForm} setDealForm={setDealForm} onAddDeal={addDeal} theme={theme} T={T}
+            dealForm={dealForm} setDealForm={setDealForm} onAddDeal={addDeal} onDeleteDeal={deleteDeal} theme={theme} T={T}
           />
         )}
 

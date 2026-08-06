@@ -1,6 +1,6 @@
 "use client";
 import { CheckCircle2, XCircle } from "lucide-react";
-import { Theme } from "@/lib/types";
+import { Theme } from "../../lib/types";
 
 export type ToastState = { message: string; type: "success" | "error" } | null;
 

@@ -1,11 +1,11 @@
 "use client";
-import { Plus } from "lucide-react";
+import { Plus, Trash2 } from "lucide-react";
 import { Deal, Theme } from "@/lib/types";
 
 type DealForm = { store_name: string; product_name: string; deal_price: string; regular_price: string; valid_until: string; distance_km: string };
 
 export default function DealsView({
-  deals, showDealForm, setShowDealForm, dealForm, setDealForm, onAddDeal, theme, T,
+  deals, showDealForm, setShowDealForm, dealForm, setDealForm, onAddDeal, onDeleteDeal, theme, T,
 }: {
   deals: Deal[];
   showDealForm: boolean;
@@ -13,6 +13,7 @@ export default function DealsView({
   dealForm: DealForm;
   setDealForm: (v: DealForm) => void;
   onAddDeal: () => void;
+  onDeleteDeal: (dealId: string, productName: string) => void;
   theme: "dark" | "light";
   T: Theme;
 }) {
@@ -47,7 +48,12 @@ export default function DealsView({
             <div className="text-sm font-medium">{d.product_name}</div>
             <div className="text-xs" style={{ color: T.textLo }}>{d.store_name}{d.distance_km != null ? ` · ${d.distance_km} km` : ""} · bis {d.valid_until}</div>
           </div>
-          <div className="font-mono text-sm font-semibold">{d.deal_price.toFixed(2)} €</div>
+          <div className="flex items-center gap-2">
+            <div className="font-mono text-sm font-semibold">{d.deal_price.toFixed(2)} €</div>
+            <button onClick={() => onDeleteDeal(d.id, d.product_name)} title="Deal löschen" style={{ color: T.textLo }} className="rounded p-1 hover:text-[#D9534F]">
+              <Trash2 size={13} />
+            </button>
+          </div>
         </div>
       ))}
     </div>
