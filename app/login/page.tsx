@@ -1,5 +1,6 @@
 "use client";
 import { useState, FormEvent } from "react";
+import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 
 const C = {
@@ -9,25 +10,28 @@ const C = {
 
 export default function Login() {
   const [email, setEmail] = useState("");
-  const [remember, setRemember] = useState(true);
-  const [sent, setSent] = useState(false);
+  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const router = useRouter();
 
   const handleLogin = async (e: FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError(null);
 
-    localStorage.setItem("smartvend-remember", remember ? "true" : "false");
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
 
-    const { error } = await supabase.auth.signInWithOtp({
-      email,
-      options: { emailRedirectTo: `${window.location.origin}/dashboard` },
-    });
     setLoading(false);
-    if (error) setError(error.message);
-    else setSent(true);
+    if (error) {
+      setError(
+        error.message.includes("Invalid login credentials")
+          ? "E-Mail oder Passwort stimmt nicht."
+          : error.message
+      );
+      return;
+    }
+    router.push("/dashboard");
   };
 
   return (
@@ -46,61 +50,48 @@ export default function Login() {
         </div>
 
         <div style={{ background: C.surface, borderColor: C.border }} className="rounded-lg border p-6">
-          {sent ? (
-            <div className="text-center">
-              <div style={{ color: C.textHi }} className="mb-1 text-sm font-medium">Link ist unterwegs</div>
-              <p style={{ color: C.textLo }} className="text-xs">
-                Check dein E-Mail-Postfach (<span style={{ color: C.textHi }}>{email}</span>) und klick den Login-Link.
-              </p>
-              <button onClick={() => setSent(false)} style={{ color: C.textLo }} className="mt-4 text-xs underline">
-                Andere E-Mail-Adresse verwenden
-              </button>
+          <form onSubmit={handleLogin} className="space-y-3">
+            <div>
+              <label style={{ color: C.textLo }} className="mb-1.5 block text-xs">E-Mail-Adresse</label>
+              <input
+                type="email"
+                placeholder="du@firma.de"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                autoComplete="email"
+                style={{ background: C.bg, borderColor: C.border, color: C.textHi }}
+                className="w-full rounded-md border px-3 py-2.5 text-sm outline-none placeholder:text-[#5B6572] focus:border-[#E8A33D]"
+              />
             </div>
-          ) : (
-            <form onSubmit={handleLogin} className="space-y-3">
-              <div>
-                <label style={{ color: C.textLo }} className="mb-1.5 block text-xs">E-Mail-Adresse</label>
-                <input
-                  type="email"
-                  placeholder="du@firma.de"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required
-                  autoComplete="email"
-                  style={{ background: C.bg, borderColor: C.border, color: C.textHi }}
-                  className="w-full rounded-md border px-3 py-2.5 text-sm outline-none placeholder:text-[#5B6572] focus:border-[#E8A33D]"
-                />
-              </div>
+            <div>
+              <label style={{ color: C.textLo }} className="mb-1.5 block text-xs">Passwort</label>
+              <input
+                type="password"
+                placeholder="••••••••"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                autoComplete="current-password"
+                style={{ background: C.bg, borderColor: C.border, color: C.textHi }}
+                className="w-full rounded-md border px-3 py-2.5 text-sm outline-none placeholder:text-[#5B6572] focus:border-[#E8A33D]"
+              />
+            </div>
 
-              <label className="flex items-center gap-2 text-xs" style={{ color: C.textLo }}>
-                <input
-                  type="checkbox"
-                  checked={remember}
-                  onChange={(e) => setRemember(e.target.checked)}
-                  style={{ accentColor: C.amber }}
-                />
-                Angemeldet bleiben
-              </label>
-
-              <button
-                type="submit"
-                disabled={loading}
-                style={{ background: C.amber, color: C.bg }}
-                className="w-full rounded-md py-2.5 text-sm font-medium disabled:opacity-50"
-              >
-                {loading ? "Sende Link…" : "Login-Link senden"}
-              </button>
-              {error && (
-                <p style={{ color: "#D9534F" }} className="text-xs">
-                  {error.includes("rate limit") ? "Zu viele Versuche — kurz warten und nochmal probieren." : error}
-                </p>
-              )}
-            </form>
-          )}
+            <button
+              type="submit"
+              disabled={loading}
+              style={{ background: C.amber, color: C.bg }}
+              className="w-full rounded-md py-2.5 text-sm font-medium disabled:opacity-50"
+            >
+              {loading ? "Meldet an…" : "Anmelden"}
+            </button>
+            {error && <p style={{ color: "#D9534F" }} className="text-xs">{error}</p>}
+          </form>
         </div>
 
         <p style={{ color: C.textLo }} className="mt-4 text-center text-[11px]">
-          Kein Passwort nötig — wir schicken dir einen einmaligen Anmelde-Link per E-Mail.
+          Zugangsdaten vergessen? Meld dich bei deinem Betreiber.
         </p>
       </div>
     </div>
