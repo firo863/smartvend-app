@@ -19,7 +19,7 @@ export default function Login() {
     setLoading(true);
     setError(null);
 
-    localStorage.setItem("smartvend-remember", remember ? "true" : "false");
+    localStorage.setItem("Nachfüllkompass-remember", remember ? "true" : "false");
 
     const { error } = await supabase.auth.signInWithOtp({
       email,
@@ -41,7 +41,7 @@ export default function Login() {
             SV
           </div>
           <div className="text-[11px] font-semibold uppercase tracking-widest" style={{ color: C.amber }}>
-            SmartVend · Pilot
+            Nachfüllkompass · Pilot
           </div>
           <h1 style={{ color: C.textHi }} className="mt-1 text-xl font-semibold">
             Anmelden

@@ -47,14 +47,14 @@ export default function Dashboard() {
   };
 
   useEffect(() => {
-    const stored = localStorage.getItem("smartvend-theme");
+    const stored = localStorage.getItem("Nachfüllkompass-theme");
     if (stored === "light" || stored === "dark") setTheme(stored);
   }, []);
 
   const toggleTheme = () => {
     const next = theme === "dark" ? "light" : "dark";
     setTheme(next);
-    localStorage.setItem("smartvend-theme", next);
+    localStorage.setItem("Nachfüllkompass-theme", next);
   };
 
   const handleError = (error: { message?: string; code?: string } | null) => {
@@ -248,7 +248,7 @@ export default function Dashboard() {
       <div className="flex-1 p-4 pb-28 sm:p-8 sm:pb-8">
         <div className="mb-6 flex items-center justify-between">
           <div>
-            <div className="text-[11px] font-semibold uppercase tracking-widest" style={{ color: T.amber }}>SmartVend · Pilot</div>
+            <div className="text-[11px] font-semibold uppercase tracking-widest" style={{ color: T.amber }}>Nachfüllkompass · Pilot</div>
             <h1 className="mt-1 text-xl font-semibold sm:text-2xl">{NAV_ITEMS.find((n) => n.id === activeView)?.label}</h1>
           </div>
           <div className="flex items-center gap-2">

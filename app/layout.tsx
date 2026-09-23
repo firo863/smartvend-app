@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "SmartVend",
-  description: "SmartVend Pilot Dashboard",
+  title: "Nachfüllkompass",
+  description: "Nachfüllkompass Pilot Dashboard",
 };
 
 export default function RootLayout({

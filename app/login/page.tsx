@@ -61,7 +61,7 @@ export default function Login() {
             SV
           </div>
           <div className="text-[11px] font-semibold uppercase tracking-widest" style={{ color: C.amber }}>
-            SmartVend · Pilot
+            Nachfüllkompass · Pilot
           </div>
           <h1 style={{ color: C.textHi }} className="mt-1 text-xl font-semibold">
             {showForgot ? "Passwort zurücksetzen" : "Anmelden"}
